@@ -13,6 +13,7 @@ import (
 
 	"github.com/gorilla/websocket"
 
+	"labdeck/internal/adapter"
 	"labdeck/internal/config"
 	"labdeck/internal/engine"
 	"labdeck/internal/store"
@@ -25,6 +26,7 @@ type Server struct {
 	eng    *engine.Engine
 	st     *store.Store
 	gw     *sshgw.Gateway
+	col    *adapter.Collector
 	mux    *http.ServeMux
 	notify chan struct{} // poked on every transition; coalesced by the broadcaster
 
@@ -32,12 +34,13 @@ type Server struct {
 	wsConns map[*websocket.Conn]bool
 }
 
-func New(cfg *config.Config, eng *engine.Engine, st *store.Store, gw *sshgw.Gateway) *Server {
+func New(cfg *config.Config, eng *engine.Engine, st *store.Store, gw *sshgw.Gateway, col *adapter.Collector) *Server {
 	s := &Server{
 		cfg:     cfg,
 		eng:     eng,
 		st:      st,
 		gw:      gw,
+		col:     col,
 		mux:     http.NewServeMux(),
 		notify:  make(chan struct{}, 1),
 		wsConns: map[*websocket.Conn]bool{},
@@ -54,6 +57,7 @@ func New(cfg *config.Config, eng *engine.Engine, st *store.Store, gw *sshgw.Gate
 	s.mux.HandleFunc("DELETE /api/credentials/{id}", s.handleDeleteCredential)
 	s.mux.HandleFunc("GET /api/ssh/sessions", s.handleSSHSessions)
 	s.mux.HandleFunc("GET /api/ssh/{id}/ws", gw.HandleWS)
+	s.mux.HandleFunc("GET /api/top", s.handleTop)
 
 	staticFS, _ := fs.Sub(web.Static, "static")
 	s.mux.Handle("/", http.FileServerFS(staticFS))
@@ -99,6 +103,13 @@ func (s *Server) summary() summaryPayload {
 
 func (s *Server) handleSummary(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, s.summary())
+}
+
+func (s *Server) handleTop(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, map[string]any{
+		"generated_at": time.Now(),
+		"integrations": s.col.Snapshot(),
+	})
 }
 
 func (s *Server) handleUptime(w http.ResponseWriter, r *http.Request) {

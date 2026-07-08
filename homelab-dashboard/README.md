@@ -2,7 +2,7 @@
 
 自托管的家庭实验室值班台：集中展示所有服务的健康状态，快速跳转 Web 界面，（规划中）浏览器内 SSH。项目规划见 [PLAN.md](PLAN.md)。
 
-当前进度：**M1（探测 + 看板 + 告警）+ M2 第一部分（WebSSH 网关）已可用**。
+当前进度：**M1（探测 + 看板 + 告警）+ M2（WebSSH 网关、Proxmox/ESXi/Docker 适配器、资源 Top 视图）已可用**。
 
 ## 功能
 
@@ -13,6 +13,11 @@
   - 凭据库 AES-256-GCM 加密存储（主密钥来自 `LABDECK_MASTER_KEY`，不落库）
   - 支持密码与私钥认证；主机指纹首次连接固定（TOFU），变更即拒绝
   - 空闲超时自动断开、并发会话上限、全量会话审计（谁/何时/连哪台/流量/关闭原因）
+- **资源 Top 视图**（`top.html`）："节点 → VM/LXC → 容器"层级树 + 全局 Top 榜，实时 CPU/内存/磁盘条（≥70% 黄、≥90% 红），无需在虚拟机里装 agent
+  - **Proxmox**：`/cluster/resources` 一次调用拿全集群（API Token 认证）
+  - **ESXi**：SOAP VIM API（govmomi），单机 ESXi 可用，免费许可证只读即可
+  - **Docker**：Engine API（unix socket / tcp），容器级 CPU/内存
+  - 采集失败时保留最后一次成功数据并显示错误横幅，不闪空
 - SQLite 历史存储（默认保留 30 天，自动清理）
 - 通知：Telegram、通用 Webhook（宕机/恢复，启动时的首次转正不打扰）
 - 可选 HTTP Basic 认证；配置中 `${VAR}` 自动展开环境变量
@@ -79,7 +84,8 @@ services:
 | `GET/POST /api/credentials`、`DELETE /api/credentials/{id}` | 加密凭据管理（不回显密文） |
 | `GET /api/ssh/{host}/ws` | WebSSH 终端通道 |
 | `GET /api/ssh/sessions` | SSH 会话审计 |
+| `GET /api/top` | 资源清单树（全部 integration 的最新快照） |
 
 ## 路线图
 
-M2 剩余：Proxmox/ESXi/Docker 等深度适配器、资源 Top 视图、依赖拓扑告警抑制、终端二次确认（TOTP）。详见 [PLAN.md](PLAN.md)。
+M2 剩余：依赖拓扑告警抑制、终端二次确认（TOTP）。M3：更多适配器（OPNsense/AdGuard/TrueNAS/媒体栈）、绝对/相对双口径、通用 JSON 适配器、OIDC。详见 [PLAN.md](PLAN.md)。

@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>labdeck · 资源 Top</title>
+<link rel="stylesheet" href="style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect x='2' y='9' width='3' height='5' fill='%233987e5'/><rect x='7' y='5' width='3' height='9' fill='%233987e5'/><rect x='12' y='2' width='3' height='12' fill='%233987e5'/></svg>">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <a class="nav-back" href="./">← 看板</a>
+    <h1>资源 Top</h1>
+  </div>
+  <div class="view-toggle" role="tablist" aria-label="视图切换">
+    <button id="mode-tree" class="on" role="tab" aria-selected="true">树视图</button>
+    <button id="mode-flat" role="tab" aria-selected="false">Top 榜</button>
+  </div>
+  <div class="conn" id="refreshed"><span id="refreshed-text">加载中…</span></div>
+</header>
+
+<main id="top-root">
+  <p class="empty" id="top-empty">未配置任何 integration。在 services.yaml 的 integrations 段添加 proxmox / docker / esxi 后重启。</p>
+</main>
+
+<div class="tooltip" id="tooltip" role="tooltip" hidden></div>
+<script src="top.js"></script>
+</body>
+</html>

@@ -31,10 +31,30 @@ type Config struct {
 	Listen    string      `yaml:"listen"`
 	Auth      Auth        `yaml:"auth"`
 	Defaults  Defaults    `yaml:"defaults"`
-	SSH       SSHSettings `yaml:"ssh"`
-	Notifiers []Notifier  `yaml:"notifiers"`
-	Hosts     []Host      `yaml:"hosts"`
-	Services  []Service   `yaml:"services"`
+	SSH          SSHSettings   `yaml:"ssh"`
+	Notifiers    []Notifier    `yaml:"notifiers"`
+	Hosts        []Host        `yaml:"hosts"`
+	Services     []Service     `yaml:"services"`
+	Integrations []Integration `yaml:"integrations"`
+}
+
+// Integration is a deep adapter pulling resource inventory (nodes/VMs/containers).
+type Integration struct {
+	ID       string   `yaml:"id"`
+	Type     string   `yaml:"type"` // proxmox | docker | esxi
+	Name     string   `yaml:"name"`
+	Interval Duration `yaml:"interval"`
+
+	URL         string `yaml:"url"`          // proxmox / esxi
+	InsecureTLS bool   `yaml:"insecure_tls"` // self-signed homelab APIs
+
+	TokenID     string `yaml:"token_id"`     // proxmox: user@realm!tokenname
+	TokenSecret string `yaml:"token_secret"` // proxmox: token uuid
+
+	Endpoint string `yaml:"endpoint"` // docker: unix:///var/run/docker.sock or tcp://host:2375
+
+	Username string `yaml:"username"` // esxi
+	Password string `yaml:"password"` // esxi
 }
 
 type SSHSettings struct {
@@ -176,6 +196,40 @@ func (c *Config) finalize() error {
 			if h.Address == "" {
 				return fmt.Errorf("host %s: ssh requires address", h.ID)
 			}
+		}
+	}
+
+	intSeen := map[string]bool{}
+	for ii := range c.Integrations {
+		in := &c.Integrations[ii]
+		if in.ID == "" {
+			return fmt.Errorf("integration #%d: missing id", ii)
+		}
+		if intSeen[in.ID] {
+			return fmt.Errorf("duplicate integration id %q", in.ID)
+		}
+		intSeen[in.ID] = true
+		if in.Name == "" {
+			in.Name = in.ID
+		}
+		if in.Interval == 0 {
+			in.Interval = Duration(10 * time.Second)
+		}
+		switch in.Type {
+		case "proxmox":
+			if in.URL == "" || in.TokenID == "" || in.TokenSecret == "" {
+				return fmt.Errorf("integration %s: proxmox requires url, token_id, token_secret", in.ID)
+			}
+		case "docker":
+			if in.Endpoint == "" {
+				return fmt.Errorf("integration %s: docker requires endpoint", in.ID)
+			}
+		case "esxi":
+			if in.URL == "" || in.Username == "" || in.Password == "" {
+				return fmt.Errorf("integration %s: esxi requires url, username, password", in.ID)
+			}
+		default:
+			return fmt.Errorf("integration %s: unknown type %q", in.ID, in.Type)
 		}
 	}
 

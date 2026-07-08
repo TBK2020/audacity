@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"labdeck/internal/adapter"
 	"labdeck/internal/api"
 	"labdeck/internal/config"
 	"labdeck/internal/creds"
@@ -66,9 +67,16 @@ func main() {
 		}
 	}
 
+	adapters, err := adapter.Build(cfg.Integrations)
+	if err != nil {
+		slog.Error("build integrations", "err", err)
+		os.Exit(1)
+	}
+	col := adapter.NewCollector(cfg.Integrations, adapters)
+
 	eng := engine.New(cfg)
 	notifiers := notify.Build(cfg.Notifiers)
-	srv := api.New(cfg, eng, st, gw)
+	srv := api.New(cfg, eng, st, gw, col)
 
 	eng.OnRecord = func(r engine.ProbeRecord) {
 		if err := st.RecordProbe(checkService[r.CheckID], r); err != nil {
@@ -87,6 +95,7 @@ func main() {
 	defer stop()
 
 	go eng.Run(ctx)
+	go col.Run(ctx)
 	go st.RetainLoop(ctx, *retentionDays)
 	go srv.Broadcast(ctx.Done())
 

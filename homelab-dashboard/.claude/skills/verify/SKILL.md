@@ -23,7 +23,19 @@ Smoke recipe (all local, no external deps):
    `httpCredentials`, screenshot `/`, check `#conn-text` shows 实时 (WebSocket live)
    and no console errors.
 
+SSH gateway: run a PTY-capable test sshd (gliderlabs/ssh + creack/pty, see
+scratchpad smoke/testsshd), set LABDECK_MASTER_KEY, POST a credential, then
+drive terminal.html?host=<id> with Playwright (type into page.keyboard).
+
+Integrations / top view: mock Proxmox+Docker with a python JSON server
+(smoke/mockapis.py pattern); for ESXi run govmomi's simulator standalone
+(simulator.VPX() → model.Service.NewServer(), creds user/pass) and point the
+esxi integration at its URL. Check /api/top, then screenshot top.html.
+
 Gotchas:
+- NEVER `pkill -f <word>` where <word> appears in your own Bash command string
+  — it kills your own shell (exit 144). Use `pgrep -x <binary>` or bracket
+  patterns like `pgrep -f "name[.]py"`.
 - The icmp check shells out to `ping`; not present in this sandbox (expected fail —
   the Dockerfile installs iputils-ping).
 - Probe start has per-check jitter up to one interval; wait interval+jitter before
