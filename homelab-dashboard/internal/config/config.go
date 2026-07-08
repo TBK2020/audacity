@@ -28,12 +28,18 @@ func (d *Duration) UnmarshalYAML(node *yaml.Node) error {
 func (d Duration) Std() time.Duration { return time.Duration(d) }
 
 type Config struct {
-	Listen    string     `yaml:"listen"`
-	Auth      Auth       `yaml:"auth"`
-	Defaults  Defaults   `yaml:"defaults"`
-	Notifiers []Notifier `yaml:"notifiers"`
-	Hosts     []Host     `yaml:"hosts"`
-	Services  []Service  `yaml:"services"`
+	Listen    string      `yaml:"listen"`
+	Auth      Auth        `yaml:"auth"`
+	Defaults  Defaults    `yaml:"defaults"`
+	SSH       SSHSettings `yaml:"ssh"`
+	Notifiers []Notifier  `yaml:"notifiers"`
+	Hosts     []Host      `yaml:"hosts"`
+	Services  []Service   `yaml:"services"`
+}
+
+type SSHSettings struct {
+	IdleTimeout Duration `yaml:"idle_timeout"` // terminal auto-disconnect
+	MaxSessions int      `yaml:"max_sessions"` // concurrent terminal cap
 }
 
 type Auth struct {
@@ -59,9 +65,16 @@ type Notifier struct {
 }
 
 type Host struct {
-	ID      string `yaml:"id"`
-	Name    string `yaml:"name"`
-	Address string `yaml:"address"`
+	ID      string   `yaml:"id"`
+	Name    string   `yaml:"name"`
+	Address string   `yaml:"address"`
+	SSH     *HostSSH `yaml:"ssh"`
+}
+
+type HostSSH struct {
+	Port       int    `yaml:"port"`
+	User       string `yaml:"user"`       // falls back to the credential's username
+	Credential string `yaml:"credential"` // id in the encrypted credential store
 }
 
 type Service struct {
@@ -135,6 +148,35 @@ func (c *Config) finalize() error {
 	}
 	if d.CertWarnDays == 0 {
 		d.CertWarnDays = 14
+	}
+	if c.SSH.IdleTimeout == 0 {
+		c.SSH.IdleTimeout = Duration(15 * time.Minute)
+	}
+	if c.SSH.MaxSessions == 0 {
+		c.SSH.MaxSessions = 5
+	}
+
+	hostSeen := map[string]bool{}
+	for hi := range c.Hosts {
+		h := &c.Hosts[hi]
+		if h.ID == "" {
+			return fmt.Errorf("host #%d: missing id", hi)
+		}
+		if hostSeen[h.ID] {
+			return fmt.Errorf("duplicate host id %q", h.ID)
+		}
+		hostSeen[h.ID] = true
+		if h.SSH != nil {
+			if h.SSH.Port == 0 {
+				h.SSH.Port = 22
+			}
+			if h.SSH.Credential == "" {
+				return fmt.Errorf("host %s: ssh requires credential (id in the credential store)", h.ID)
+			}
+			if h.Address == "" {
+				return fmt.Errorf("host %s: ssh requires address", h.ID)
+			}
+		}
 	}
 
 	seen := map[string]bool{}

@@ -14,6 +14,15 @@ defaults:
   success_threshold: 2   # 连续成功 N 次才判恢复
   cert_warn_days: 14     # 证书临期告警天数
 
+# WebSSH 网关。启用需设置环境变量 LABDECK_MASTER_KEY（凭据库加密主密钥），
+# 并通过 API 录入凭据：
+#   curl -u admin:$PW -X POST http://<host>:8383/api/credentials \
+#     -d '{"id":"pve-root","type":"password","username":"root","secret":"..."}'
+# type 也可为 "key"，secret 填 PEM 私钥内容。首次连接自动固定主机指纹（TOFU）。
+ssh:
+  idle_timeout: 15m      # 终端空闲自动断开
+  max_sessions: 5        # 并发终端上限
+
 notifiers:
   - type: telegram
     token: ${TELEGRAM_BOT_TOKEN}
@@ -25,6 +34,10 @@ hosts:
   - id: pve-01
     name: Proxmox 主节点
     address: 10.0.0.10
+    ssh:
+      port: 22
+      user: root             # 省略则用凭据里的 username
+      credential: pve-root   # 凭据库中的 id
 
 services:
   - id: router

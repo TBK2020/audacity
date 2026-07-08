@@ -16,6 +16,7 @@ import (
 	"labdeck/internal/config"
 	"labdeck/internal/engine"
 	"labdeck/internal/store"
+	"labdeck/internal/sshgw"
 	"labdeck/web"
 )
 
@@ -23,6 +24,7 @@ type Server struct {
 	cfg    *config.Config
 	eng    *engine.Engine
 	st     *store.Store
+	gw     *sshgw.Gateway
 	mux    *http.ServeMux
 	notify chan struct{} // poked on every transition; coalesced by the broadcaster
 
@@ -30,11 +32,12 @@ type Server struct {
 	wsConns map[*websocket.Conn]bool
 }
 
-func New(cfg *config.Config, eng *engine.Engine, st *store.Store) *Server {
+func New(cfg *config.Config, eng *engine.Engine, st *store.Store, gw *sshgw.Gateway) *Server {
 	s := &Server{
 		cfg:     cfg,
 		eng:     eng,
 		st:      st,
+		gw:      gw,
 		mux:     http.NewServeMux(),
 		notify:  make(chan struct{}, 1),
 		wsConns: map[*websocket.Conn]bool{},
@@ -44,6 +47,13 @@ func New(cfg *config.Config, eng *engine.Engine, st *store.Store) *Server {
 	s.mux.HandleFunc("GET /api/services/{id}/history", s.handleHistory)
 	s.mux.HandleFunc("GET /api/events", s.handleEvents)
 	s.mux.HandleFunc("GET /api/ws", s.handleWS)
+
+	s.mux.HandleFunc("GET /api/hosts", s.handleHosts)
+	s.mux.HandleFunc("GET /api/credentials", s.handleListCredentials)
+	s.mux.HandleFunc("POST /api/credentials", s.handleSaveCredential)
+	s.mux.HandleFunc("DELETE /api/credentials/{id}", s.handleDeleteCredential)
+	s.mux.HandleFunc("GET /api/ssh/sessions", s.handleSSHSessions)
+	s.mux.HandleFunc("GET /api/ssh/{id}/ws", gw.HandleWS)
 
 	staticFS, _ := fs.Sub(web.Static, "static")
 	s.mux.Handle("/", http.FileServerFS(staticFS))

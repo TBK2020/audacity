@@ -130,6 +130,8 @@ main { padding: 20px 24px 8px; }
   padding: 2px 9px;
 }
 .card-links a:hover { color: var(--ink); border-color: var(--muted); }
+.card-links a.ssh-link { color: var(--status-good); border-color: rgba(12, 163, 12, 0.4); }
+.card-links a.ssh-link:hover { border-color: var(--status-good); }
 
 /* ── Events table ────────────────────────────────────── */
 .events-panel { padding: 4px 24px 40px; }

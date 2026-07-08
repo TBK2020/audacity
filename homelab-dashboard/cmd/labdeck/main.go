@@ -14,8 +14,10 @@ import (
 
 	"labdeck/internal/api"
 	"labdeck/internal/config"
+	"labdeck/internal/creds"
 	"labdeck/internal/engine"
 	"labdeck/internal/notify"
+	"labdeck/internal/sshgw"
 	"labdeck/internal/store"
 )
 
@@ -49,9 +51,24 @@ func main() {
 		}
 	}
 
+	masterKey := creds.DeriveKey(os.Getenv("LABDECK_MASTER_KEY"))
+	gw := sshgw.New(cfg, st, masterKey)
+	if !gw.Enabled() {
+		hasSSH := false
+		for _, h := range cfg.Hosts {
+			if h.SSH != nil {
+				hasSSH = true
+				break
+			}
+		}
+		if hasSSH {
+			slog.Warn("hosts have ssh configured but LABDECK_MASTER_KEY is not set — SSH gateway disabled")
+		}
+	}
+
 	eng := engine.New(cfg)
 	notifiers := notify.Build(cfg.Notifiers)
-	srv := api.New(cfg, eng, st)
+	srv := api.New(cfg, eng, st, gw)
 
 	eng.OnRecord = func(r engine.ProbeRecord) {
 		if err := st.RecordProbe(checkService[r.CheckID], r); err != nil {

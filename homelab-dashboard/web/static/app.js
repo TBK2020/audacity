@@ -84,7 +84,7 @@ function card(svc) {
   el.append(head, meta, strip);
 
   const urls = Object.entries(svc.urls || {});
-  if (urls.length) {
+  if (urls.length || svc.ssh_host) {
     const links = document.createElement("div");
     links.className = "card-links";
     for (const [kind, href] of urls) {
@@ -93,6 +93,15 @@ function card(svc) {
       a.target = "_blank";
       a.rel = "noreferrer";
       a.textContent = URL_LABEL[kind] || kind;
+      links.appendChild(a);
+    }
+    if (svc.ssh_host) {
+      const a = document.createElement("a");
+      a.href = `terminal.html?host=${encodeURIComponent(svc.ssh_host)}`;
+      a.target = "_blank";
+      a.rel = "noreferrer";
+      a.className = "ssh-link";
+      a.textContent = "SSH ▸";
       links.appendChild(a);
     }
     el.appendChild(links);

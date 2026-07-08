@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>labdeck · 终端</title>
+<link rel="stylesheet" href="vendor/xterm.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect x='1' y='2' width='14' height='12' rx='2' fill='%230ca30c'/></svg>">
+<style>
+  :root {
+    --page: #0d0d0d; --surface: #1a1a19; --ink: #ffffff; --ink-2: #c3c2b7;
+    --muted: #898781; --hairline: rgba(255,255,255,0.10);
+    --good: #0ca30c; --critical: #d03b3b; --pending: #898781;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0; background: var(--page); color: var(--ink);
+    font: 13px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+    display: flex; flex-direction: column;
+  }
+  header {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 14px; border-bottom: 1px solid var(--hairline); flex: none;
+  }
+  header a { color: var(--ink-2); text-decoration: none; }
+  header a:hover { color: var(--ink); }
+  .sep { color: var(--muted); }
+  #target { font-weight: 600; }
+  #state { margin-left: auto; display: flex; align-items: center; gap: 6px; color: var(--muted); }
+  #state .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--pending); }
+  #state.on .dot { background: var(--good); }
+  #state.off .dot { background: var(--critical); }
+  #term { flex: 1; min-height: 0; padding: 6px 0 0 6px; background: #0d0d0d; }
+  .xterm .xterm-viewport { background: #0d0d0d !important; }
+</style>
+</head>
+<body>
+<header>
+  <a href="./">← 看板</a>
+  <span class="sep">/</span>
+  <span id="target">终端</span>
+  <span id="state"><span class="dot" aria-hidden="true"></span><span id="state-text">连接中…</span></span>
+</header>
+<div id="term"></div>
+<script src="vendor/xterm.js"></script>
+<script src="vendor/addon-fit.js"></script>
+<script src="terminal.js"></script>
+</body>
+</html>

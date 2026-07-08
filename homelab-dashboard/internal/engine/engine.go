@@ -78,14 +78,20 @@ type Engine struct {
 
 	mu       sync.RWMutex
 	services map[string]*ServiceState
-	order    []string // service ids in config order
+	order    []string        // service ids in config order
+	sshHosts map[string]bool // host ids with an ssh block
 
 	OnRecord     func(ProbeRecord)
 	OnTransition func(Transition)
 }
 
 func New(cfg *config.Config) *Engine {
-	e := &Engine{cfg: cfg, services: map[string]*ServiceState{}}
+	e := &Engine{cfg: cfg, services: map[string]*ServiceState{}, sshHosts: map[string]bool{}}
+	for _, h := range cfg.Hosts {
+		if h.SSH != nil {
+			e.sshHosts[h.ID] = true
+		}
+	}
 	now := time.Now()
 	for si := range cfg.Services {
 		svc := &cfg.Services[si]
@@ -247,6 +253,9 @@ func (e *Engine) Snapshot() []ServiceView {
 			Status:     st.Status,
 			LastChange: st.LastChange,
 		}
+		if e.sshHosts[st.Service.Host] {
+			sv.SSHHost = st.Service.Host
+		}
 		for _, cs := range st.Checks {
 			sv.Checks = append(sv.Checks, CheckView{
 				ID:        cs.Check.ID,
@@ -276,6 +285,7 @@ type ServiceView struct {
 	Status     Status            `json:"status"`
 	LatencyMS  int64             `json:"latency_ms"`
 	LastChange time.Time         `json:"last_change"`
+	SSHHost    string            `json:"ssh_host,omitempty"`
 	Checks     []CheckView       `json:"checks"`
 }
 

@@ -23,7 +23,7 @@ func Open(path string) (*Store, error) {
 	// modernc.org/sqlite serializes writes; a single connection avoids
 	// SQLITE_BUSY churn under concurrent probe recording.
 	db.SetMaxOpenConns(1)
-	if _, err := db.Exec(schema); err != nil {
+	if _, err := db.Exec(schema + sshSchema); err != nil {
 		db.Close()
 		return nil, err
 	}
