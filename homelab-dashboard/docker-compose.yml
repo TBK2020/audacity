@@ -1,0 +1,14 @@
+services:
+  labdeck:
+    build: .
+    # image: ghcr.io/tbk2020/labdeck:latest   # 发布后可直接用镜像
+    container_name: labdeck
+    restart: unless-stopped
+    ports:
+      - "8383:8383"
+    volumes:
+      - ./data:/data          # services.yaml 与 labdeck.db 放这里
+    environment:
+      - LABDECK_PASSWORD=${LABDECK_PASSWORD:-}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-}

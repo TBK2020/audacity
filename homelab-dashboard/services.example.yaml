@@ -1,0 +1,88 @@
+# labdeck 配置示例 —— 复制为 services.yaml 后按需修改。
+# 所有 ${VAR} 会在加载时替换为同名环境变量，敏感信息不要写死在文件里。
+
+listen: ":8383"
+
+auth:
+  # 非空则启用 HTTP Basic 认证（任意用户名 + 此密码）。生产环境务必设置。
+  password: ${LABDECK_PASSWORD}
+
+defaults:
+  interval: 30s          # 默认探测间隔
+  timeout: 10s           # 默认单次超时
+  failure_threshold: 3   # 连续失败 N 次才判宕机（防抖）
+  success_threshold: 2   # 连续成功 N 次才判恢复
+  cert_warn_days: 14     # 证书临期告警天数
+
+notifiers:
+  - type: telegram
+    token: ${TELEGRAM_BOT_TOKEN}
+    chat_id: "${TELEGRAM_CHAT_ID}"
+  - type: webhook
+    url: https://example.com/hooks/labdeck
+
+hosts:
+  - id: pve-01
+    name: Proxmox 主节点
+    address: 10.0.0.10
+
+services:
+  - id: router
+    name: 主路由 (OpenWrt)
+    group: 网络
+    urls:
+      internal: http://10.0.0.1
+    checks:
+      - type: icmp
+        address: 10.0.0.1
+        interval: 15s
+      - type: http
+        url: http://10.0.0.1
+        degraded_latency: 500ms
+
+  - id: adguard
+    name: AdGuard Home
+    group: 网络
+    urls:
+      internal: http://10.0.0.2:3000
+    checks:
+      - type: tcp
+        address: 10.0.0.2:53
+      - type: http
+        url: http://10.0.0.2:3000
+
+  - id: pve
+    name: Proxmox VE
+    group: 虚拟化
+    host: pve-01
+    urls:
+      internal: https://10.0.0.10:8006
+    checks:
+      - type: http
+        url: https://10.0.0.10:8006
+      - type: tls-cert
+        address: 10.0.0.10:8006
+
+  - id: jellyfin
+    name: Jellyfin
+    group: 媒体
+    host: pve-01
+    urls:
+      internal: http://10.0.0.20:8096
+      external: https://jf.example.com
+    checks:
+      - type: http
+        url: http://10.0.0.20:8096/health
+        keyword: Healthy
+        degraded_latency: 1s
+
+  - id: vaultwarden
+    name: Vaultwarden
+    group: 工具
+    urls:
+      internal: https://vault.lan.example.com
+    checks:
+      - type: http
+        url: https://vault.lan.example.com/alive
+      - type: tls-cert
+        url: https://vault.lan.example.com

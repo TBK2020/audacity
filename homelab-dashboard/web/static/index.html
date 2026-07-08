@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>labdeck · Home Lab</title>
+<link rel="stylesheet" href="style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><circle cx='8' cy='8' r='7' fill='%230ca30c'/></svg>">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-mark" aria-hidden="true"></span>
+    <h1>labdeck</h1>
+  </div>
+  <div class="health" id="health" role="status">
+    <span class="health-figure" id="health-count">–/–</span>
+    <span class="health-label">服务正常</span>
+  </div>
+  <div class="conn" id="conn" title="实时连接状态">
+    <span class="conn-dot" aria-hidden="true"></span><span id="conn-text">连接中…</span>
+  </div>
+</header>
+
+<main id="board" aria-live="polite">
+  <p class="empty" id="empty">等待第一次探测数据…</p>
+</main>
+
+<section class="events-panel">
+  <h2>最近事件</h2>
+  <table class="events" aria-label="最近的状态变更事件">
+    <thead><tr><th>时间</th><th>服务</th><th>变更</th><th>原因</th></tr></thead>
+    <tbody id="events-body"><tr><td colspan="4" class="muted">暂无事件</td></tr></tbody>
+  </table>
+</section>
+
+<div class="tooltip" id="tooltip" role="tooltip" hidden></div>
+<script src="app.js"></script>
+</body>
+</html>
