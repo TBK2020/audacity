@@ -128,7 +128,7 @@ services:
 | **TrueNAS SCALE** | REST API v2 / WebSocket API | 池健康、SMART 告警、快照/复制任务、温度 | 跳转 UI、SSH |
 | **Unraid** | GraphQL API（官方 Connect API） | 阵列状态、奇偶校验、Docker/VM 概览 | 跳转 UI、SSH |
 | **Synology DSM** | DSM Web API | 存储池、磁盘健康、套件状态 | 跳转 UI、SSH |
-| **ESXi/vCenter** | vSphere REST API | 主机/VM 状态 | 跳转 UI |
+| **ESXi/vCenter** | vSphere API（VIM/SOAP，经 govmomi）；REST vAPI 仅 vCenter 有 | 宿主 CPU/内存、每 VM quickStats（CPU MHz、内存、balloon/swap）、硬件传感器、数据存储用量 | 跳转 UI、SSH（需开启）、启停 VM（v2，免费许可证 API 只读不支持写操作） |
 
 ### 4.2 容器与编排（P0）
 
@@ -242,8 +242,8 @@ services:
 
 | 层级 | 数据来源 | 指标 | 说明 |
 |---|---|---|---|
-| 物理节点 | Proxmox API `/nodes/{node}/status` | CPU、内存、IO 等待、负载 | 已有 P0 适配器顺带产出，无额外成本 |
-| VM / LXC | Proxmox API `/cluster/resources`（一次调用拿全集群） | 每 guest 的 CPU%、内存、磁盘、netin/netout、运行状态 | **无需在 guest 内装任何东西**，这是本视图的性价比核心 |
+| 物理节点 | Proxmox API `/nodes/{node}/status`；ESXi 经 govmomi 读 `HostSystem.summary.quickStats` | CPU、内存、IO 等待、负载 | 已有 P0/P1 适配器顺带产出，无额外成本 |
+| VM / LXC | Proxmox API `/cluster/resources`（一次调用拿全集群）；ESXi 经 govmomi PropertyCollector + ContainerView 一次批量取回所有 VM 的 `summary.quickStats` | 每 guest 的 CPU%、内存、磁盘、netin/netout、运行状态 | **无需在 guest 内装任何东西**，这是本视图的性价比核心。注意单机 ESXi 只有 SOAP VIM API（REST vAPI 仅 vCenter 提供），免费许可证下 API 只读——读指标不受影响 |
 | 容器 | Docker Engine API `/containers/.../stats` 或 Podman API | 每容器 CPU%、内存、网络、块 IO | 要求该 VM 的 Docker socket 已接入（P0 适配器已覆盖） |
 | 裸进程（可选） | Netdata/Glances API 或轻量 agent | 进程级 top | 仅对未容器化的服务需要，默认不做 |
 
@@ -310,7 +310,7 @@ services:
 
 ### M2 — 深度集成 + WebSSH（+6–8 周）
 - SSH 网关（凭据库、审计、sudo-mode 确认）
-- P0 适配器：Proxmox、Docker、OPNsense/pfSense、AdGuard Home、Tailscale、TrueNAS
+- P0 适配器：Proxmox、ESXi（govmomi）、Docker、OPNsense/pfSense、AdGuard Home、Tailscale、TrueNAS
 - 资源 Top 视图初版（node → VM/LXC → 容器 树形视图 + 全局 Top-N，见 5.5）
 - 依赖拓扑与告警抑制、维护模式
 - viewer 角色 + 挂墙模式
