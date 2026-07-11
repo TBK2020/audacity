@@ -32,6 +32,10 @@ type Server struct {
 
 	wsMu    sync.Mutex
 	wsConns map[*websocket.Conn]bool
+
+	// OnMaintenance is invoked after a maintenance window is set, so main can
+	// persist it and fan the resulting transitions through the normal pipeline.
+	OnMaintenance func(serviceID string, until time.Time, trs []engine.Transition)
 }
 
 func New(cfg *config.Config, eng *engine.Engine, st *store.Store, gw *sshgw.Gateway, col *adapter.Collector) *Server {
@@ -48,6 +52,7 @@ func New(cfg *config.Config, eng *engine.Engine, st *store.Store, gw *sshgw.Gate
 	s.mux.HandleFunc("GET /api/summary", s.handleSummary)
 	s.mux.HandleFunc("GET /api/services/{id}/uptime", s.handleUptime)
 	s.mux.HandleFunc("GET /api/services/{id}/history", s.handleHistory)
+	s.mux.HandleFunc("POST /api/services/{id}/maintenance", s.handleMaintenance)
 	s.mux.HandleFunc("GET /api/events", s.handleEvents)
 	s.mux.HandleFunc("GET /api/ws", s.handleWS)
 
@@ -133,9 +138,41 @@ func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, points)
 }
 
+// handleMaintenance opens a maintenance window ({"minutes": N}) or clears it
+// ({"minutes": 0}).
+func (s *Server) handleMaintenance(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Minutes int `json:"minutes"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<10)).Decode(&req); err != nil {
+		http.Error(w, "invalid json: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	var until time.Time
+	if req.Minutes > 0 {
+		until = time.Now().Add(time.Duration(req.Minutes) * time.Minute)
+	}
+	trs, err := s.eng.SetMaintenance(r.PathValue("id"), until, false)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	if s.OnMaintenance != nil {
+		s.OnMaintenance(r.PathValue("id"), until, trs)
+	}
+	writeJSON(w, map[string]any{"maintenance_until": nullableTime(until)})
+}
+
+func nullableTime(t time.Time) *time.Time {
+	if t.IsZero() {
+		return nil
+	}
+	return &t
+}
+
 func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	limit := intParam(r, "limit", 100)
-	events, err := s.st.RecentEvents(limit)
+	events, err := s.st.RecentEvents(r.URL.Query().Get("service"), limit)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

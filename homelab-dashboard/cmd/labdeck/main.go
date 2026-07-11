@@ -104,6 +104,27 @@ func main() {
 		notify.Dispatch(notifiers, t)
 		srv.Poke()
 	}
+	// The API's maintenance handler persists the window and reuses the same
+	// transition pipeline (event log + broadcast; alerts self-suppress).
+	srv.OnMaintenance = func(serviceID string, until time.Time, trs []engine.Transition) {
+		if err := st.SaveMaintenance(serviceID, until); err != nil {
+			slog.Error("save maintenance", "err", err)
+		}
+		for _, t := range trs {
+			eng.OnTransition(t)
+		}
+	}
+
+	// Restore maintenance windows that outlived the last shutdown.
+	if windows, err := st.LoadMaintenance(); err != nil {
+		slog.Error("load maintenance", "err", err)
+	} else {
+		for id, until := range windows {
+			if _, err := eng.SetMaintenance(id, until, true); err != nil {
+				slog.Warn("restore maintenance skipped", "service", id, "err", err)
+			}
+		}
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

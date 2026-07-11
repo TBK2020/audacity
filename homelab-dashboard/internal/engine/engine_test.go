@@ -207,6 +207,52 @@ func TestUpServiceUnaffectedByDeadDependency(t *testing.T) {
 	}
 }
 
+func TestMaintenanceSuppressesAlerts(t *testing.T) {
+	e := testEngine(t)
+	feed(e, true, false) // up
+
+	// Enter maintenance, then the service fails its checks.
+	if _, err := e.SetMaintenance("svc", time.Now().Add(time.Hour), false); err != nil {
+		t.Fatal(err)
+	}
+	if statusOf(e, "svc") != StatusMaintenance {
+		t.Fatalf("after SetMaintenance = %s, want maintenance", statusOf(e, "svc"))
+	}
+	trs := feed(e, false, false)
+	feed(e, false, false)
+	trs = feed(e, false, false) // would be down without maintenance
+	if trs != nil {
+		t.Fatalf("maintenance should suppress the down transition, got %+v", trs)
+	}
+	if statusOf(e, "svc") != StatusMaintenance {
+		t.Fatalf("during maintenance = %s, want maintenance", statusOf(e, "svc"))
+	}
+
+	// Clearing maintenance surfaces the real (down) status.
+	if _, err := e.SetMaintenance("svc", time.Time{}, false); err != nil {
+		t.Fatal(err)
+	}
+	if statusOf(e, "svc") != StatusDown {
+		t.Fatalf("after clearing maintenance = %s, want down", statusOf(e, "svc"))
+	}
+}
+
+func TestMaintenanceWindowsRoundtrip(t *testing.T) {
+	e := testEngine(t)
+	feed(e, true, false)
+	until := time.Now().Add(30 * time.Minute)
+	e.SetMaintenance("svc", until, false)
+	w := e.MaintenanceWindows()
+	if got, ok := w["svc"]; !ok || !got.Equal(until) {
+		t.Fatalf("MaintenanceWindows = %+v, want svc→%v", w, until)
+	}
+	// A past window is not reported.
+	e.SetMaintenance("svc", time.Now().Add(-time.Minute), false)
+	if len(e.MaintenanceWindows()) != 0 {
+		t.Fatalf("expired window still reported: %+v", e.MaintenanceWindows())
+	}
+}
+
 func TestSnapshotShape(t *testing.T) {
 	e := testEngine(t)
 	feed(e, true, false)

@@ -50,6 +50,11 @@ CREATE TABLE IF NOT EXISTS events (
 	reason      TEXT    NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_events_ts ON events(ts);
+
+CREATE TABLE IF NOT EXISTS maintenance (
+	service_id TEXT PRIMARY KEY,
+	until      INTEGER NOT NULL -- unix seconds
+);
 `
 
 func (s *Store) Close() error { return s.db.Close() }
@@ -78,9 +83,17 @@ type Event struct {
 	Reason     string    `json:"reason"`
 }
 
-func (s *Store) RecentEvents(limit int) ([]Event, error) {
-	rows, err := s.db.Query(
-		`SELECT service_id, ts, from_status, to_status, reason FROM events ORDER BY ts DESC LIMIT ?`, limit)
+// RecentEvents returns the newest events; serviceID "" means all services.
+func (s *Store) RecentEvents(serviceID string, limit int) ([]Event, error) {
+	query := `SELECT service_id, ts, from_status, to_status, reason FROM events`
+	args := []any{}
+	if serviceID != "" {
+		query += ` WHERE service_id = ?`
+		args = append(args, serviceID)
+	}
+	query += ` ORDER BY ts DESC LIMIT ?`
+	args = append(args, limit)
+	rows, err := s.db.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -156,6 +169,38 @@ func (s *Store) RecentHistory(serviceID string, hours, limit int) ([]LatencyPoin
 		p.Time = time.Unix(ts, 0)
 		p.OK = ok == 1
 		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
+// SaveMaintenance persists a window; a zero/past `until` clears it.
+func (s *Store) SaveMaintenance(serviceID string, until time.Time) error {
+	if until.After(time.Now()) {
+		_, err := s.db.Exec(
+			`INSERT INTO maintenance(service_id, until) VALUES(?,?)
+			 ON CONFLICT(service_id) DO UPDATE SET until=excluded.until`,
+			serviceID, until.Unix())
+		return err
+	}
+	_, err := s.db.Exec(`DELETE FROM maintenance WHERE service_id = ?`, serviceID)
+	return err
+}
+
+// LoadMaintenance returns unexpired windows for restoring after a restart.
+func (s *Store) LoadMaintenance() (map[string]time.Time, error) {
+	rows, err := s.db.Query(`SELECT service_id, until FROM maintenance WHERE until > ?`, time.Now().Unix())
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]time.Time{}
+	for rows.Next() {
+		var id string
+		var until int64
+		if err := rows.Scan(&id, &until); err != nil {
+			return nil, err
+		}
+		out[id] = time.Unix(until, 0)
 	}
 	return out, rows.Err()
 }

@@ -55,6 +55,10 @@ func Dispatch(notifiers []Notifier, t engine.Transition) {
 	if t.From == engine.StatusUnreachable && t.To != engine.StatusDown {
 		return
 	}
+	// Maintenance windows silence alerts on both edges.
+	if t.To == engine.StatusMaintenance || t.From == engine.StatusMaintenance {
+		return
+	}
 	for _, n := range notifiers {
 		go func(n Notifier) {
 			if err := n.Notify(t); err != nil {

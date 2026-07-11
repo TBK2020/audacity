@@ -4,6 +4,7 @@ package engine
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"math/rand"
 	"sync"
@@ -23,6 +24,9 @@ const (
 	// StatusUnreachable means the service is down but so is something it
 	// depends on — the dependency owns the alert, this service stays quiet.
 	StatusUnreachable Status = "unreachable"
+	// StatusMaintenance means alerts are silenced by an operator window,
+	// regardless of what the checks report.
+	StatusMaintenance Status = "maintenance"
 )
 
 // rank orders statuses from best to worst for aggregation.
@@ -55,10 +59,12 @@ type CheckState struct {
 
 type ServiceState struct {
 	Service    *config.Service
-	Status     Status // effective status (after dependency suppression)
+	Status     Status // effective status (after dependency + maintenance suppression)
 	raw        Status // aggregated from checks only
 	LastChange time.Time
 	Checks     []*CheckState
+
+	maintenanceUntil time.Time // zero = not in maintenance
 }
 
 // ProbeRecord is emitted for every probe execution (history persistence).
@@ -129,7 +135,79 @@ func (e *Engine) Run(ctx context.Context) {
 		}
 	}
 	e.mu.RUnlock()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		e.maintenanceExpiryLoop(ctx)
+	}()
+
 	wg.Wait()
+}
+
+// maintenanceExpiryLoop re-evaluates effective status once a minute so a
+// maintenance window that has elapsed promptly flips services back, even if
+// their probe interval is long.
+func (e *Engine) maintenanceExpiryLoop(ctx context.Context) {
+	t := time.NewTicker(time.Minute)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			now := time.Now()
+			e.mu.Lock()
+			anyExpiring := false
+			for _, st := range e.services {
+				if !st.maintenanceUntil.IsZero() && !now.Before(st.maintenanceUntil) {
+					anyExpiring = true
+				}
+			}
+			var trs []Transition
+			if anyExpiring {
+				trs = e.applyEffective(now, "", "")
+			}
+			e.mu.Unlock()
+			if e.OnTransition != nil {
+				for _, tr := range trs {
+					e.OnTransition(tr)
+				}
+			}
+		}
+	}
+}
+
+// SetMaintenance opens (until > now) or clears (until in the past) a service's
+// maintenance window and returns the resulting transitions. onLoad restores a
+// persisted window quietly, without emitting the enter-maintenance event.
+func (e *Engine) SetMaintenance(id string, until time.Time, onLoad bool) ([]Transition, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	st, ok := e.services[id]
+	if !ok {
+		return nil, fmt.Errorf("unknown service %q", id)
+	}
+	st.maintenanceUntil = until
+	trs := e.applyEffective(time.Now(), "", "")
+	if onLoad {
+		return nil, nil
+	}
+	return trs, nil
+}
+
+// MaintenanceWindows returns currently-active windows for persistence.
+func (e *Engine) MaintenanceWindows() map[string]time.Time {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	out := map[string]time.Time{}
+	now := time.Now()
+	for id, st := range e.services {
+		if !st.maintenanceUntil.IsZero() && now.Before(st.maintenanceUntil) {
+			out[id] = st.maintenanceUntil
+		}
+	}
+	return out
 }
 
 func (e *Engine) runCheckLoop(ctx context.Context, svcID string, cs *CheckState) {
@@ -252,6 +330,13 @@ func (e *Engine) applyEffective(now time.Time, originID, originReason string) []
 		st := e.services[id]
 		eff[id] = st.raw // pre-set: config validation rejects cycles, this is a safety net
 		res := st.raw
+		// A maintenance window overrides everything: alerts stay silent whether
+		// the checks pass or fail.
+		if now.Before(st.maintenanceUntil) {
+			res = StatusMaintenance
+			eff[id] = res
+			return res
+		}
 		if st.raw == StatusDown {
 			for _, dep := range st.Service.DependsOn {
 				if d := calc(dep); d == StatusDown || d == StatusUnreachable {
@@ -276,6 +361,10 @@ func (e *Engine) applyEffective(now time.Time, originID, originReason string) []
 		st.LastChange = now
 		reason := ""
 		switch {
+		case next == StatusMaintenance:
+			reason = "已进入维护模式"
+		case from == StatusMaintenance:
+			reason = "维护模式结束"
 		case id == originID:
 			reason = originReason
 		case next == StatusUnreachable:
@@ -317,6 +406,10 @@ func (e *Engine) Snapshot() []ServiceView {
 			URLs:       st.Service.URLs,
 			Status:     st.Status,
 			LastChange: st.LastChange,
+			DependsOn:  st.Service.DependsOn,
+		}
+		if !st.maintenanceUntil.IsZero() && time.Now().Before(st.maintenanceUntil) {
+			sv.MaintenanceUntil = &st.maintenanceUntil
 		}
 		if e.sshHosts[st.Service.Host] {
 			sv.SSHHost = st.Service.Host
@@ -347,11 +440,13 @@ type ServiceView struct {
 	Icon       string            `json:"icon,omitempty"`
 	Host       string            `json:"host,omitempty"`
 	URLs       map[string]string `json:"urls,omitempty"`
-	Status     Status            `json:"status"`
-	LatencyMS  int64             `json:"latency_ms"`
-	LastChange time.Time         `json:"last_change"`
-	SSHHost    string            `json:"ssh_host,omitempty"`
-	Checks     []CheckView       `json:"checks"`
+	Status           Status            `json:"status"`
+	LatencyMS        int64             `json:"latency_ms"`
+	LastChange       time.Time         `json:"last_change"`
+	SSHHost          string            `json:"ssh_host,omitempty"`
+	DependsOn        []string          `json:"depends_on,omitempty"`
+	MaintenanceUntil *time.Time        `json:"maintenance_until,omitempty"`
+	Checks           []CheckView       `json:"checks"`
 }
 
 type CheckView struct {
