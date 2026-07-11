@@ -26,8 +26,37 @@ fi
 
 # 注意：macOS 自带 bash 3.2 在 $VAR 后紧跟多字节字符时会解析出错，
 # 因此本脚本所有变量一律用 ${VAR} 花括号形式。
+
+# 构建策略：优先 container build；builder VM 起不来（常见报错
+# "Timeout waiting for connection to builder"）时自动降级为
+# "golang 镜像内编译 + alpine 直接运行"，完全绕开 BuildKit。
+IMAGE="${NAME}"
+BUILD_MODE=image
+
+try_build() {
+  container build -t "${NAME}" . 2>&1
+}
+
 echo "==> 构建镜像 ${NAME} (linux/arm64)"
-container build -t "${NAME}" .
+if ! OUT="$(try_build)"; then
+  echo "${OUT}" | tail -2
+  echo "==> container build 失败，尝试重建 builder 后重试一次…"
+  container builder delete >/dev/null 2>&1 || true
+  container builder start >/dev/null 2>&1 || true
+  if ! OUT="$(try_build)"; then
+    echo "${OUT}" | tail -2
+    echo "==> builder 仍不可用，降级：在 golang 容器内编译二进制（不走 BuildKit）"
+    BUILD_MODE=binary
+    mkdir -p bin .gocache
+    container run --rm \
+      --volume "$(pwd):/src" \
+      --volume "$(pwd)/.gocache:/go" \
+      --env CGO_ENABLED=0 \
+      golang:1.24-alpine \
+      sh -c 'cd /src && go build -trimpath -o bin/labdeck ./cmd/labdeck'
+    IMAGE="alpine:3.20"
+  fi
+fi
 
 # 旧容器存在则移除（container delete 是官方命令名，rm 是别名）
 container stop "${NAME}" >/dev/null 2>&1 || true
@@ -53,7 +82,15 @@ else
 fi
 
 echo "==> 启动容器 ${NAME}"
-container run "${RUN_ARGS[@]}" "${NAME}"
+if [ "${BUILD_MODE}" = image ]; then
+  container run "${RUN_ARGS[@]}" "${IMAGE}"
+else
+  # 降级模式：alpine + 挂载编译好的静态二进制（含内嵌前端）
+  container run "${RUN_ARGS[@]}" \
+    --volume "$(pwd)/bin:/opt/labdeck" \
+    "${IMAGE}" \
+    /opt/labdeck/labdeck -config /data/services.yaml -db /data/labdeck.db
+fi
 
 sleep 1
 echo
