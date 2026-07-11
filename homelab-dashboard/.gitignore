@@ -1,6 +1,0 @@
-.env
-bin/
-.gocache/
-data/
-labdeck
-*.db
