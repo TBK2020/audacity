@@ -28,23 +28,32 @@ fi
 # 因此本脚本所有变量一律用 ${VAR} 花括号形式。
 
 # 构建策略：优先 container build；builder VM 起不来（常见报错
-# "Timeout waiting for connection to builder"）时自动降级为
-# "golang 镜像内编译 + alpine 直接运行"，完全绕开 BuildKit。
+# "Timeout waiting for connection to builder"，或干脆无输出卡死）时自动
+# 降级为 "golang 镜像内编译 + alpine 直接运行"，完全绕开 BuildKit。
+# 构建输出全程实时透传，卡住超过 BUILD_TIMEOUT 秒自动放弃。
 IMAGE="${NAME}"
 BUILD_MODE=image
+BUILD_TIMEOUT="${BUILD_TIMEOUT:-300}"
 
-try_build() {
-  container build -t "${NAME}" . 2>&1
+# macOS 没有 timeout 命令，用后台看门狗实现（bash 3.2 兼容）
+run_with_timeout() {
+  local secs="$1"; shift
+  "$@" &
+  local pid=$!
+  ( sleep "${secs}"; kill "${pid}" 2>/dev/null ) &
+  local dog=$!
+  local rc=0
+  wait "${pid}" || rc=$?
+  kill "${dog}" 2>/dev/null
+  wait "${dog}" 2>/dev/null || true
+  return "${rc}"
 }
 
-echo "==> 构建镜像 ${NAME} (linux/arm64)"
-if ! OUT="$(try_build)"; then
-  echo "${OUT}" | tail -2
-  echo "==> container build 失败，尝试重建 builder 后重试一次…"
+echo "==> 构建镜像 ${NAME} (linux/arm64)，最多等 ${BUILD_TIMEOUT}s，输出实时显示："
+if ! run_with_timeout "${BUILD_TIMEOUT}" container build -t "${NAME}" .; then
+  echo "==> container build 失败或超时，重建 builder 后重试一次…"
   container builder delete >/dev/null 2>&1 || true
-  container builder start >/dev/null 2>&1 || true
-  if ! OUT="$(try_build)"; then
-    echo "${OUT}" | tail -2
+  if ! run_with_timeout "${BUILD_TIMEOUT}" container build -t "${NAME}" .; then
     echo "==> builder 仍不可用，降级：在 golang 容器内编译二进制（不走 BuildKit）"
     BUILD_MODE=binary
     mkdir -p bin .gocache
