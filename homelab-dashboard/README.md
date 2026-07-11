@@ -42,11 +42,17 @@ curl -u admin:$LABDECK_PASSWORD -X POST http://localhost:8383/api/credentials \
 
 ## 快速开始
 
+所有密码/密钥集中放在 `.env`（git 已忽略，不会泄露到仓库）：
+
+```bash
+cp .env.example .env && nano .env        # 填 LABDECK_PASSWORD 等
+```
+
 ```bash
 # 二进制
 go build -o labdeck ./cmd/labdeck
 cp services.example.yaml services.yaml   # 按需编辑
-LABDECK_PASSWORD=changeme ./labdeck -config services.yaml
+./labdeck -config services.yaml
 
 # 或 Docker
 mkdir -p data && cp services.example.yaml data/services.yaml

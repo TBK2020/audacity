@@ -12,6 +12,14 @@ cd "$(dirname "$0")"
 
 NAME=haos-dashboard
 
+# 自动加载 .env（git 忽略，见 .env.example）——避免密码出现在 shell 历史里
+if [ -f .env ]; then
+  set -a
+  # shellcheck disable=SC1091
+  . ./.env
+  set +a
+fi
+
 if ! command -v container >/dev/null; then
   echo "未找到 container CLI。安装见 https://github.com/apple/container/releases" >&2
   exit 1
@@ -123,6 +131,8 @@ RUN_ARGS=(
   --env "LABDECK_TOTP=${LABDECK_TOTP:-}"
   --env "TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}"
   --env "TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-}"
+  --env "PVE_TOKEN=${PVE_TOKEN:-}"
+  --env "ESXI_PASS=${ESXI_PASS:-}"
 )
 
 # 新版 CLI 支持 --publish；旧版没有，此时直接用容器自己的 IP 访问

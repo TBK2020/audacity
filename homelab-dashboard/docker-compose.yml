@@ -8,9 +8,7 @@ services:
       - "8383:8383"
     volumes:
       - ./data:/data          # services.yaml 与 labdeck.db 放这里
-    environment:
-      - LABDECK_PASSWORD=${LABDECK_PASSWORD:-}
-      - LABDECK_MASTER_KEY=${LABDECK_MASTER_KEY:-}   # WebSSH 凭据库主密钥
-      - LABDECK_TOTP=${LABDECK_TOTP:-}               # 终端二次确认（labdeck -gen-totp 生成）
-      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
-      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-}
+    # 所有变量集中在同目录 .env（git 忽略，模板见 .env.example）
+    env_file:
+      - path: .env
+        required: false
