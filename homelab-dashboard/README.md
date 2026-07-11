@@ -50,10 +50,25 @@ LABDECK_PASSWORD=changeme ./labdeck -config services.yaml
 
 # 或 Docker
 mkdir -p data && cp services.example.yaml data/services.yaml
-docker compose up -d
+docker compose up -d          # 容器名 haos-dashboard
 ```
 
 打开 `http://<host>:8383`。
+
+### macOS + Apple container CLI
+
+Mac 上用 Apple 官方 `container` 工具（非 Docker）的话，直接用仓库里的脚本：
+
+```bash
+container system start                    # 首次使用执行一次
+export LABDECK_PASSWORD=面板密码
+export LABDECK_MASTER_KEY=一段随机长口令   # 需要 WebSSH 时必填
+./run-apple-container.sh                  # 首次运行会生成 data/services.yaml 模板
+# 编辑 data/services.yaml 后再跑一次
+./run-apple-container.sh
+```
+
+脚本会构建 arm64 镜像并以 `haos-dashboard` 为名启动。新版 CLI 支持 `--publish` 时映射到 `localhost:8383`；旧版则用 `container ls` 里 ADDR 列的容器 IP 直接访问 `http://<容器IP>:8383`（Apple container 的每个容器都有独立 IP，主机可直连）。常用命令：`container logs -f haos-dashboard`、`container stop haos-dashboard`。
 
 ## 配置
 
