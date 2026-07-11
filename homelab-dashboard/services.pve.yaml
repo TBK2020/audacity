@@ -1,0 +1,37 @@
+# 最小配置：只监控一台 Proxmox VE。
+# 用法: cp services.pve.yaml data/services.yaml 后把下面三处【】改成你的真实值。
+
+listen: ":8383"
+
+auth:
+  password: ${LABDECK_PASSWORD}
+
+defaults:
+  interval: 30s
+  timeout: 10s
+  failure_threshold: 3
+  success_threshold: 2
+
+services:
+  - id: pve
+    name: Proxmox VE
+    group: 虚拟化
+    urls:
+      internal: https://【PVE的IP】:8006
+    checks:
+      - type: http
+        url: https://【PVE的IP】:8006
+      - type: tls-cert
+        address: 【PVE的IP】:8006
+
+# 资源 Top 视图的数据源。PVE 上创建 API Token：
+# 数据中心 → 权限 → API Token → 添加（勾掉"特权分离"或给 PVEAuditor 只读角色）
+integrations:
+  - id: pve
+    name: Proxmox 主节点
+    type: proxmox
+    url: https://【PVE的IP】:8006
+    insecure_tls: true
+    token_id: root@pam!labdeck        # 改成你创建的 Token ID
+    token_secret: 【Token的Secret值】
+    interval: 10s
