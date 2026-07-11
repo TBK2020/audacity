@@ -40,7 +40,8 @@ run_with_timeout() {
   local secs="$1"; shift
   "$@" &
   local pid=$!
-  ( sleep "${secs}"; kill "${pid}" 2>/dev/null ) &
+  # 看门狗关闭自己的标准输出/错误，避免孤儿 sleep 占住调用方的管道
+  ( sleep "${secs}"; kill "${pid}" 2>/dev/null ) >/dev/null 2>&1 &
   local dog=$!
   local rc=0
   wait "${pid}" || rc=$?
@@ -49,21 +50,63 @@ run_with_timeout() {
   return "${rc}"
 }
 
-echo "==> 构建镜像 ${NAME} (linux/arm64)，最多等 ${BUILD_TIMEOUT}s，输出实时显示："
-if ! run_with_timeout "${BUILD_TIMEOUT}" container build -t "${NAME}" .; then
-  echo "==> container build 失败或超时，重建 builder 后重试一次…"
-  container builder delete >/dev/null 2>&1 || true
+# 镜像源候选：官方仓库直连在部分网络下极慢，按顺序尝试国内镜像。
+# 可用 REGISTRY_MIRROR=你的镜像域名 置顶自定义源；"direct" 表示直连。
+CANDIDATES=()
+if [ -n "${REGISTRY_MIRROR:-}" ]; then CANDIDATES+=("${REGISTRY_MIRROR}"); fi
+CANDIDATES+=("docker.m.daocloud.io" "docker.1panel.live" "docker.1ms.run" "direct")
+
+# find_image library/alpine:3.20 → 设置 FOUND_IMAGE 为第一个能拉动的引用
+find_image() {
+  local path="$1" m ref
+  for m in "${CANDIDATES[@]}"; do
+    if [ "${m}" = "direct" ]; then ref="${path#library/}"; else ref="${m}/${path}"; fi
+    echo "    尝试镜像源: ${ref}"
+    if run_with_timeout 180 container run --rm "${ref}" /bin/true >/dev/null 2>&1; then
+      FOUND_IMAGE="${ref}"
+      return 0
+    fi
+  done
+  return 1
+}
+
+if [ "${FORCE_BUILD:-0}" != 1 ] && [ "$(uname -m)" = "arm64" ] && [ -f prebuilt/labdeck-linux-arm64 ]; then
+  # 首选路径：仓库自带预编译静态二进制（前端已内嵌），只需拉 ~3MB 的
+  # alpine 基础镜像，完全绕开 builder 和大镜像下载。FORCE_BUILD=1 可强制本地构建。
+  echo "==> 使用仓库预编译二进制（跳过镜像构建）"
+  BUILD_MODE=binary
+  mkdir -p bin
+  cp prebuilt/labdeck-linux-arm64 bin/labdeck && chmod +x bin/labdeck
+  if ! find_image "library/alpine:3.20"; then
+    echo "所有镜像源都无法拉取 alpine 基础镜像，请检查网络或设置 REGISTRY_MIRROR" >&2
+    exit 1
+  fi
+  IMAGE="${FOUND_IMAGE}"
+else
+  echo "==> 构建镜像 ${NAME} (linux/arm64)，最多等 ${BUILD_TIMEOUT}s，输出实时显示："
   if ! run_with_timeout "${BUILD_TIMEOUT}" container build -t "${NAME}" .; then
-    echo "==> builder 仍不可用，降级：在 golang 容器内编译二进制（不走 BuildKit）"
-    BUILD_MODE=binary
-    mkdir -p bin .gocache
-    container run --rm \
-      --volume "$(pwd):/src" \
-      --volume "$(pwd)/.gocache:/go" \
-      --env CGO_ENABLED=0 \
-      golang:1.24-alpine \
-      sh -c 'cd /src && go build -trimpath -o bin/labdeck ./cmd/labdeck'
-    IMAGE="alpine:3.20"
+    echo "==> container build 失败或超时，重建 builder 后重试一次…"
+    container builder delete >/dev/null 2>&1 || true
+    if ! run_with_timeout "${BUILD_TIMEOUT}" container build -t "${NAME}" .; then
+      echo "==> builder 仍不可用，降级：在 golang 容器内编译二进制（不走 BuildKit）"
+      BUILD_MODE=binary
+      mkdir -p bin .gocache
+      if ! find_image "library/golang:1.24-alpine"; then
+        echo "所有镜像源都无法拉取 golang 镜像，请检查网络或设置 REGISTRY_MIRROR" >&2
+        exit 1
+      fi
+      container run --rm \
+        --volume "$(pwd):/src" \
+        --volume "$(pwd)/.gocache:/go" \
+        --env CGO_ENABLED=0 \
+        "${FOUND_IMAGE}" \
+        sh -c 'cd /src && go build -trimpath -o bin/labdeck ./cmd/labdeck'
+      if ! find_image "library/alpine:3.20"; then
+        echo "无法拉取 alpine 基础镜像" >&2
+        exit 1
+      fi
+      IMAGE="${FOUND_IMAGE}"
+    fi
   fi
 fi
 

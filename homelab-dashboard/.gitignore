@@ -1,0 +1,5 @@
+bin/
+.gocache/
+data/
+labdeck
+*.db
