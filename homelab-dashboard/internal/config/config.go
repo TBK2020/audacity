@@ -60,11 +60,15 @@ type Integration struct {
 type SSHSettings struct {
 	IdleTimeout Duration `yaml:"idle_timeout"` // terminal auto-disconnect
 	MaxSessions int      `yaml:"max_sessions"` // concurrent terminal cap
+	RequireTOTP bool     `yaml:"require_totp"` // sudo-mode: TOTP before every terminal
 }
 
 type Auth struct {
 	// Password enables HTTP Basic auth for the UI and API when non-empty.
 	Password string `yaml:"password"`
+	// TOTPSecret (base32) backs the terminal's second-factor prompt.
+	// Generate one with `labdeck -gen-totp`.
+	TOTPSecret string `yaml:"totp_secret"`
 }
 
 type Defaults struct {
@@ -105,6 +109,10 @@ type Service struct {
 	Host   string            `yaml:"host"`
 	URLs   map[string]string `yaml:"urls"`
 	Checks []Check           `yaml:"checks"`
+	// DependsOn lists service ids this one is behind (router, hypervisor…).
+	// While a dependency is down this service reports "unreachable" and does
+	// not fire its own alerts — no notification storm for one dead router.
+	DependsOn []string `yaml:"depends_on"`
 }
 
 type Check struct {
@@ -275,6 +283,52 @@ func (c *Config) finalize() error {
 			if err := ck.validate(); err != nil {
 				return fmt.Errorf("service %s check %s: %w", svc.ID, ck.ID, err)
 			}
+		}
+	}
+
+	return c.validateDependencies(seen)
+}
+
+// validateDependencies checks depends_on references and rejects cycles.
+func (c *Config) validateDependencies(serviceIDs map[string]bool) error {
+	deps := map[string][]string{}
+	for _, svc := range c.Services {
+		for _, dep := range svc.DependsOn {
+			if dep == svc.ID {
+				return fmt.Errorf("service %s depends on itself", svc.ID)
+			}
+			if !serviceIDs[dep] {
+				return fmt.Errorf("service %s depends on unknown service %q", svc.ID, dep)
+			}
+		}
+		deps[svc.ID] = svc.DependsOn
+	}
+	const (
+		white = 0 // unvisited
+		gray  = 1 // on the current DFS path
+		black = 2 // done
+	)
+	color := map[string]int{}
+	var visit func(id string) error
+	visit = func(id string) error {
+		switch color[id] {
+		case gray:
+			return fmt.Errorf("dependency cycle involving service %q", id)
+		case black:
+			return nil
+		}
+		color[id] = gray
+		for _, dep := range deps[id] {
+			if err := visit(dep); err != nil {
+				return err
+			}
+		}
+		color[id] = black
+		return nil
+	}
+	for id := range deps {
+		if err := visit(id); err != nil {
+			return err
 		}
 	}
 	return nil

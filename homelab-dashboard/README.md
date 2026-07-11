@@ -2,17 +2,19 @@
 
 自托管的家庭实验室值班台：集中展示所有服务的健康状态，快速跳转 Web 界面，（规划中）浏览器内 SSH。项目规划见 [PLAN.md](PLAN.md)。
 
-当前进度：**M1（探测 + 看板 + 告警）+ M2（WebSSH 网关、Proxmox/ESXi/Docker 适配器、资源 Top 视图）已可用**。
+当前进度：**M1 与 M2 全部完成**（探测 + 看板 + 告警、WebSSH 网关、Proxmox/ESXi/Docker 适配器、资源 Top 视图、依赖拓扑告警抑制、终端 TOTP 二次确认）。
 
 ## 功能
 
 - 探测类型：`http`（状态码/关键字/慢响应降级）、`tcp`、`icmp`、`tls-cert`（证书临期降级）
 - 防抖状态机：连续 N 次失败才判宕机、连续 N 次成功才判恢复，杜绝抖动告警
+- **依赖拓扑告警抑制**：服务声明 `depends_on: [router]` 后，路由器宕机时下游全部标记"不可达"（空心红圈）且不发告警——路由器恢复后仍宕机的服务才转为真告警，支持多级传递
 - 深色优先的 NOC 看板：分组卡片、全局健康横幅、30 天可用性条带、最近事件表，WebSocket 实时刷新（断线自动降级为轮询）
 - **浏览器内 SSH 终端**（xterm.js）：服务卡片一键连到所属主机
   - 凭据库 AES-256-GCM 加密存储（主密钥来自 `LABDECK_MASTER_KEY`，不落库）
   - 支持密码与私钥认证；主机指纹首次连接固定（TOFU），变更即拒绝
   - 空闲超时自动断开、并发会话上限、全量会话审计（谁/何时/连哪台/流量/关闭原因）
+  - **TOTP 二次确认**（sudo-mode）：`ssh.require_totp: true` 后每次打开终端都要输动态验证码，密钥用 `labdeck -gen-totp` 生成后导入认证器 App
 - **资源 Top 视图**（`top.html`）："节点 → VM/LXC → 容器"层级树 + 全局 Top 榜，实时 CPU/内存/磁盘条（≥70% 黄、≥90% 红），无需在虚拟机里装 agent
   - **Proxmox**：`/cluster/resources` 一次调用拿全集群（API Token 认证）
   - **ESXi**：SOAP VIM API（govmomi），单机 ESXi 可用，免费许可证只读即可
@@ -88,4 +90,4 @@ services:
 
 ## 路线图
 
-M2 剩余：依赖拓扑告警抑制、终端二次确认（TOTP）。M3：更多适配器（OPNsense/AdGuard/TrueNAS/媒体栈）、绝对/相对双口径、通用 JSON 适配器、OIDC。详见 [PLAN.md](PLAN.md)。
+M2 已全部完成。M3：更多适配器（OPNsense/AdGuard/TrueNAS/媒体栈）、CPU 绝对/相对双口径、通用 JSON 适配器、OIDC、从 Homepage/Uptime Kuma 迁移导入器。详见 [PLAN.md](PLAN.md)。

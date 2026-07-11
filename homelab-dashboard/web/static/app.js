@@ -2,7 +2,7 @@
 // WebSocket connection (poll fallback), and lazily loads uptime strips.
 "use strict";
 
-const STATUS_WORD = { up: "正常", degraded: "降级", down: "宕机", pending: "待测" };
+const STATUS_WORD = { up: "正常", degraded: "降级", down: "宕机", pending: "待测", unreachable: "不可达" };
 const URL_LABEL = { internal: "内网", external: "外网", tailscale: "Tailscale" };
 
 const board = document.getElementById("board");
@@ -39,7 +39,7 @@ function render(summary) {
   }
 }
 
-const rank = (s) => ({ down: 3, degraded: 2, pending: 1, up: 0 }[s] ?? 0);
+const rank = (s) => ({ down: 4, unreachable: 3, degraded: 2, pending: 1, up: 0 }[s] ?? 0);
 const badness = (svcs) => Math.max(...svcs.map((s) => rank(s.status)));
 
 function card(svc) {

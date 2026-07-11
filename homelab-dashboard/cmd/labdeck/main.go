@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"flag"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -20,6 +21,7 @@ import (
 	"labdeck/internal/notify"
 	"labdeck/internal/sshgw"
 	"labdeck/internal/store"
+	"labdeck/internal/totp"
 )
 
 func main() {
@@ -27,7 +29,19 @@ func main() {
 	dbPath := flag.String("db", "labdeck.db", "path to SQLite database")
 	listen := flag.String("listen", "", "listen address (overrides config)")
 	retentionDays := flag.Int("retention-days", 30, "history retention in days")
+	genTOTP := flag.Bool("gen-totp", false, "generate a TOTP secret for auth.totp_secret and exit")
 	flag.Parse()
+
+	if *genTOTP {
+		secret, err := totp.GenerateSecret()
+		if err != nil {
+			slog.Error("generate totp secret", "err", err)
+			os.Exit(1)
+		}
+		fmt.Printf("totp_secret: %s\n添加到 services.yaml 的 auth.totp_secret，并把下面的 URI 导入认证器 App：\n%s\n",
+			secret, totp.URL(secret, "admin"))
+		return
+	}
 
 	cfg, err := config.Load(*configPath)
 	if err != nil {

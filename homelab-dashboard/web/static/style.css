@@ -103,6 +103,11 @@ main { padding: 20px 24px 8px; }
 .status-dot.degraded { background: var(--status-warning); }
 .status-dot.down     { background: var(--status-critical); }
 .status-dot.pending  { background: var(--status-pending); }
+.status-dot.unreachable {
+  background: none;
+  border: 2px solid var(--status-critical); /* hollow ring: down, but not this service's fault */
+  width: 7px; height: 7px;
+}
 .card-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .status-word { margin-left: auto; font-size: 12px; color: var(--ink-2); flex: none; }
 .card.down .status-word { color: var(--status-critical); font-weight: 600; }

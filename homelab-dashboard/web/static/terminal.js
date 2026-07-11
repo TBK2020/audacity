@@ -38,13 +38,14 @@ if (!hostID) {
   connect();
 }
 
-function connect() {
+function connect(totpCode) {
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
   const base = location.pathname.replace(/\/[^/]*$/, "");
-  const ws = new WebSocket(
-    `${proto}//${location.host}${base}/api/ssh/${encodeURIComponent(hostID)}/ws`
-  );
+  let url = `${proto}//${location.host}${base}/api/ssh/${encodeURIComponent(hostID)}/ws`;
+  if (totpCode) url += `?totp=${encodeURIComponent(totpCode)}`;
+  const ws = new WebSocket(url);
   ws.binaryType = "arraybuffer";
+  let totpPending = false;
 
   ws.onopen = () => {
     // Sync the real terminal size before the shell draws its prompt.
@@ -57,6 +58,15 @@ function connect() {
       if (msg.type === "connected") {
         setState("on", msg.msg);
         targetEl.textContent = msg.msg;
+      } else if (msg.type === "totp_required") {
+        totpPending = true;
+        setState("off", "需要验证码");
+        const code = window.prompt("安全确认：请输入 TOTP 动态验证码", "");
+        if (code) {
+          connect(code);
+        } else {
+          term.writeln("\x1b[33m已取消。刷新页面可重试。\x1b[0m");
+        }
       } else if (msg.type === "error") {
         setState("off", "出错");
         term.writeln(`\r\n\x1b[31m${msg.msg}\x1b[0m`);
@@ -70,6 +80,7 @@ function connect() {
   };
 
   ws.onclose = () => {
+    if (totpPending) return; // a new connection owns the terminal now
     if (stateEl.className !== "off") setState("off", "已断开");
     term.writeln("\r\n\x1b[90m连接已关闭。刷新页面可重连。\x1b[0m");
   };

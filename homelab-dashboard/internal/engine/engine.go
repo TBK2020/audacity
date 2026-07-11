@@ -20,6 +20,9 @@ const (
 	StatusUp       Status = "up"
 	StatusDegraded Status = "degraded"
 	StatusDown     Status = "down"
+	// StatusUnreachable means the service is down but so is something it
+	// depends on — the dependency owns the alert, this service stays quiet.
+	StatusUnreachable Status = "unreachable"
 )
 
 // rank orders statuses from best to worst for aggregation.
@@ -31,8 +34,10 @@ func rank(s Status) int {
 		return 1
 	case StatusDegraded:
 		return 2
-	case StatusDown:
+	case StatusUnreachable:
 		return 3
+	case StatusDown:
+		return 4
 	}
 	return 1
 }
@@ -50,7 +55,8 @@ type CheckState struct {
 
 type ServiceState struct {
 	Service    *config.Service
-	Status     Status
+	Status     Status // effective status (after dependency suppression)
+	raw        Status // aggregated from checks only
 	LastChange time.Time
 	Checks     []*CheckState
 }
@@ -95,7 +101,7 @@ func New(cfg *config.Config) *Engine {
 	now := time.Now()
 	for si := range cfg.Services {
 		svc := &cfg.Services[si]
-		st := &ServiceState{Service: svc, Status: StatusPending, LastChange: now}
+		st := &ServiceState{Service: svc, Status: StatusPending, raw: StatusPending, LastChange: now}
 		for ci := range svc.Checks {
 			st.Checks = append(st.Checks, &CheckState{
 				Check:      &svc.Checks[ci],
@@ -163,11 +169,13 @@ func (e *Engine) executeOnce(ctx context.Context, svcID string, cs *CheckState) 
 	cs.LastResult = res
 	cs.LastRun = now
 	e.applyResult(cs, res, now)
-	tr := e.recomputeService(svcID, now, cs)
+	transitions := e.recomputeService(svcID, now, cs)
 	e.mu.Unlock()
 
-	if tr != nil && e.OnTransition != nil {
-		e.OnTransition(*tr)
+	if e.OnTransition != nil {
+		for _, tr := range transitions {
+			e.OnTransition(tr)
+		}
 	}
 }
 
@@ -207,9 +215,10 @@ func gradeUp(res probe.Result) Status {
 	return StatusUp
 }
 
-// recomputeService aggregates check states (worst wins) and returns a
-// Transition if the service status changed. Caller holds e.mu.
-func (e *Engine) recomputeService(svcID string, now time.Time, changed *CheckState) *Transition {
+// recomputeService aggregates check states (worst wins) into the service's
+// raw status, then re-runs dependency suppression across the graph. Returns
+// every effective-status transition that resulted. Caller holds e.mu.
+func (e *Engine) recomputeService(svcID string, now time.Time, changed *CheckState) []Transition {
 	svc := e.services[svcID]
 	agg := StatusPending
 	first := true
@@ -219,21 +228,77 @@ func (e *Engine) recomputeService(svcID string, now time.Time, changed *CheckSta
 			first = false
 		}
 	}
-	if agg == svc.Status {
+	if agg == svc.raw {
 		return nil
 	}
-	from := svc.Status
-	svc.Status = agg
-	svc.LastChange = now
+	svc.raw = agg
 	reason := ""
 	if changed != nil {
 		reason = changed.Check.ID + ": " + changed.LastResult.Detail
 	}
-	slog.Info("service status change", "service", svcID, "from", from, "to", agg, "reason", reason)
-	return &Transition{
-		ServiceID: svcID, ServiceName: svc.Service.Name,
-		From: from, To: agg, Time: now, Reason: reason,
+	return e.applyEffective(now, svcID, reason)
+}
+
+// applyEffective computes each service's effective status: a service whose
+// raw status is down while any of its (transitive) dependencies is down or
+// unreachable reports unreachable instead — the dependency owns the alert.
+func (e *Engine) applyEffective(now time.Time, originID, originReason string) []Transition {
+	eff := make(map[string]Status, len(e.services))
+	var calc func(id string) Status
+	calc = func(id string) Status {
+		if v, ok := eff[id]; ok {
+			return v
+		}
+		st := e.services[id]
+		eff[id] = st.raw // pre-set: config validation rejects cycles, this is a safety net
+		res := st.raw
+		if st.raw == StatusDown {
+			for _, dep := range st.Service.DependsOn {
+				if d := calc(dep); d == StatusDown || d == StatusUnreachable {
+					res = StatusUnreachable
+					break
+				}
+			}
+		}
+		eff[id] = res
+		return res
 	}
+
+	var out []Transition
+	for _, id := range e.order {
+		st := e.services[id]
+		next := calc(id)
+		if next == st.Status {
+			continue
+		}
+		from := st.Status
+		st.Status = next
+		st.LastChange = now
+		reason := ""
+		switch {
+		case id == originID:
+			reason = originReason
+		case next == StatusUnreachable:
+			reason = "依赖不可达: " + firstDownDep(e, st, eff)
+		case from == StatusUnreachable:
+			reason = "依赖已恢复"
+		}
+		slog.Info("service status change", "service", id, "from", from, "to", next, "reason", reason)
+		out = append(out, Transition{
+			ServiceID: id, ServiceName: st.Service.Name,
+			From: from, To: next, Time: now, Reason: reason,
+		})
+	}
+	return out
+}
+
+func firstDownDep(e *Engine, st *ServiceState, eff map[string]Status) string {
+	for _, dep := range st.Service.DependsOn {
+		if eff[dep] == StatusDown || eff[dep] == StatusUnreachable {
+			return dep
+		}
+	}
+	return "?"
 }
 
 // Snapshot returns a deep-enough copy of all service states in config order.

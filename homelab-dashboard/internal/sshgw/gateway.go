@@ -21,23 +21,28 @@ import (
 	"labdeck/internal/config"
 	"labdeck/internal/creds"
 	"labdeck/internal/store"
+	"labdeck/internal/totp"
 )
 
 type Gateway struct {
-	st        *store.Store
-	masterKey []byte
-	hosts     map[string]*config.Host
-	idle      time.Duration
-	sem       chan struct{}
+	st          *store.Store
+	masterKey   []byte
+	hosts       map[string]*config.Host
+	idle        time.Duration
+	sem         chan struct{}
+	requireTOTP bool
+	totpSecret  string
 }
 
 func New(cfg *config.Config, st *store.Store, masterKey []byte) *Gateway {
 	g := &Gateway{
-		st:        st,
-		masterKey: masterKey,
-		hosts:     map[string]*config.Host{},
-		idle:      cfg.SSH.IdleTimeout.Std(),
-		sem:       make(chan struct{}, cfg.SSH.MaxSessions),
+		st:          st,
+		masterKey:   masterKey,
+		hosts:       map[string]*config.Host{},
+		idle:        cfg.SSH.IdleTimeout.Std(),
+		sem:         make(chan struct{}, cfg.SSH.MaxSessions),
+		requireTOTP: cfg.SSH.RequireTOTP,
+		totpSecret:  cfg.Auth.TOTPSecret,
 	}
 	for i := range cfg.Hosts {
 		g.hosts[cfg.Hosts[i].ID] = &cfg.Hosts[i]
@@ -91,6 +96,20 @@ func (g *Gateway) HandleWS(w http.ResponseWriter, r *http.Request) {
 	}
 	defer conn.Close()
 	ws := &wsWriter{conn: conn}
+
+	// Sudo-mode: a fresh TOTP code gates every terminal, so a stolen browser
+	// session alone cannot reach a shell.
+	if g.requireTOTP {
+		if g.totpSecret == "" {
+			ws.control("error", "ssh.require_totp 已开启但 auth.totp_secret 未配置，先运行 labdeck -gen-totp")
+			return
+		}
+		if !totp.Verify(g.totpSecret, r.URL.Query().Get("totp"), time.Now()) {
+			time.Sleep(time.Second) // slow down brute force
+			ws.control("totp_required", "请输入动态验证码")
+			return
+		}
+	}
 
 	if err := g.run(r, ws, hostID, host); err != nil {
 		ws.control("error", err.Error())

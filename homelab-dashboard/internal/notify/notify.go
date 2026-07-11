@@ -43,9 +43,16 @@ func Build(cfgs []config.Notifier) []Notifier {
 }
 
 // Dispatch sends t to every notifier without blocking the engine.
-// Pending->Up transitions are informational noise on startup and are skipped.
+// Skipped as noise: startup pending→up, anything →unreachable (the dependency
+// owns that alert), and unreachable→up (the service never independently failed).
 func Dispatch(notifiers []Notifier, t engine.Transition) {
 	if t.From == engine.StatusPending && (t.To == engine.StatusUp || t.To == engine.StatusDegraded) {
+		return
+	}
+	if t.To == engine.StatusUnreachable {
+		return
+	}
+	if t.From == engine.StatusUnreachable && t.To != engine.StatusDown {
 		return
 	}
 	for _, n := range notifiers {

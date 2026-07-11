@@ -6,6 +6,8 @@ listen: ":8383"
 auth:
   # 非空则启用 HTTP Basic 认证（任意用户名 + 此密码）。生产环境务必设置。
   password: ${LABDECK_PASSWORD}
+  # 终端二次确认用的 TOTP 密钥（labdeck -gen-totp 生成，导入认证器 App）
+  totp_secret: ${LABDECK_TOTP}
 
 defaults:
   interval: 30s          # 默认探测间隔
@@ -22,6 +24,7 @@ defaults:
 ssh:
   idle_timeout: 15m      # 终端空闲自动断开
   max_sessions: 5        # 并发终端上限
+  require_totp: true     # 打开终端前要求输入动态验证码（需配置 auth.totp_secret）
 
 notifiers:
   - type: telegram
@@ -78,6 +81,7 @@ services:
   - id: adguard
     name: AdGuard Home
     group: 网络
+    depends_on: [router]   # 路由器宕机时本服务标记"不可达"且不重复告警
     urls:
       internal: http://10.0.0.2:3000
     checks:
@@ -102,6 +106,7 @@ services:
     name: Jellyfin
     group: 媒体
     host: pve-01
+    depends_on: [pve]      # 支持多级：pve 又可以 depends_on 路由器
     urls:
       internal: http://10.0.0.20:8096
       external: https://jf.example.com
