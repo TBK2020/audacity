@@ -24,36 +24,36 @@ defaults:
 ssh:
   idle_timeout: 15m      # 终端空闲自动断开
   max_sessions: 5        # 并发终端上限
-  require_totp: true     # 打开终端前要求输入动态验证码（需配置 auth.totp_secret）
+  require_totp: false    # 建议开启：打开终端前要求动态验证码（需先配置 auth.totp_secret）
 
-notifiers:
-  - type: telegram
-    token: ${TELEGRAM_BOT_TOKEN}
-    chat_id: "${TELEGRAM_CHAT_ID}"
-  - type: webhook
-    url: https://example.com/hooks/labdeck
-
+# notifiers:
+#   - type: telegram
+#     token: ${TELEGRAM_BOT_TOKEN}
+#     chat_id: "${TELEGRAM_CHAT_ID}"
+#   - type: webhook
+#     url: https://example.com/hooks/labdeck
+#
 # 深度适配器：拉取节点/VM/LXC/容器的实时资源用量，喂给"资源 Top"视图。
-integrations:
-  - id: pve
-    name: Proxmox 主节点
-    type: proxmox
-    url: https://10.0.0.10:8006
-    insecure_tls: true            # 自签证书
-    token_id: root@pam!labdeck    # PVE API Token（只读权限即可）
-    token_secret: ${PVE_TOKEN}
-    interval: 10s
-  - id: esxi-01
-    name: ESXi 服务器
-    type: esxi                    # 单机 ESXi 走 SOAP VIM API，免费许可证只读即可
-    url: https://10.0.0.11
-    insecure_tls: true
-    username: labdeck-ro
-    password: ${ESXI_PASS}
-  - id: media-docker
-    name: media-vm 上的 Docker
-    type: docker
-    endpoint: tcp://10.0.0.20:2375   # 或 unix:///var/run/docker.sock
+# integrations:
+#   - id: pve
+#     name: Proxmox 主节点
+#     type: proxmox
+#     url: https://10.0.0.10:8006
+#     insecure_tls: true            # 自签证书
+#     token_id: root@pam!labdeck    # PVE API Token（只读权限即可）
+#     token_secret: ${PVE_TOKEN}
+#     interval: 10s
+#   - id: esxi-01
+#     name: ESXi 服务器
+#     type: esxi                    # 单机 ESXi 走 SOAP VIM API，免费许可证只读即可
+#     url: https://10.0.0.11
+#     insecure_tls: true
+#     username: labdeck-ro
+#     password: ${ESXI_PASS}
+#   - id: media-docker
+#     name: media-vm 上的 Docker
+#     type: docker
+#     endpoint: tcp://10.0.0.20:2375   # 或 unix:///var/run/docker.sock
 
 hosts:
   - id: pve-01
